@@ -14,8 +14,16 @@ import Account
 // some state from the last.
 // The resultant 'Ready' will have a suitably initialized storage client.
 public class SyncStateMachine {
-    public class func toReady(authState: SyncAuthState) -> Deferred<Result<Ready>> {
+    public class func getInfoCollections(authState: SyncAuthState) -> Deferred<Result<InfoCollections>> {
         let token = authState.token(NSDate.now(), canBeExpired: true)
+        return chainDeferred(token, { (token, _) in
+            let state = InitialWithExpiredToken(token: token)
+            return state.getInfoCollections()
+        })
+    }
+
+    public class func toReady(authState: SyncAuthState) -> Deferred<Result<Ready>> {
+        let token = authState.token(NSDate.now(), canBeExpired: false)
         return chainDeferred(token, { (token, kB) in
             let state = InitialWithLiveToken(scratchpad: Scratchpad(b: KeyBundle.fromKB(kB)), token: token)
             return state.advance()
@@ -107,6 +115,25 @@ public class InvalidKeysError: ErrorType {
 }
 
 
+public class InitialWithExpiredToken: SyncState {
+    public var label: SyncStateLabel { return SyncStateLabel.InitialWithExpiredToken }
+    let client: Sync15StorageClient!
+    public init(token: TokenServerToken) {
+        let workQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)
+        let resultQueue = dispatch_get_main_queue()
+        self.client = Sync15StorageClient(token: token, workQueue: workQueue, resultQueue: resultQueue)
+    }
+
+    public func getInfoCollections() -> Deferred<Result<InfoCollections>> {
+        return chain(self.client.getInfoCollections(), {
+            return $0.value
+        })
+    }
+
+    // TODO: allow ourselves to transition to another state, either directly (because our token isn't expired), or
+    // indirectly by fetching another token, comparing server URIs, and reusing parts of whatever we have.
+    // This probably requires us to add a scratchpad to this class.
+}
 
 public class InitialWithLiveToken: SyncState {
     public var label: SyncStateLabel { return SyncStateLabel.InitialWithLiveToken }
