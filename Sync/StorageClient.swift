@@ -228,13 +228,13 @@ public class Sync15StorageClient {
                         .validate(contentType: ["application/json"])
     }
 
-    func getMetaGlobal() -> Deferred<Result<StorageResponse<GlobalEnvelope>>> {
-        let deferred = Deferred<Result<StorageResponse<GlobalEnvelope>>>(defaultQueue: self.resultQueue)
+    private func fetch<T>(path: String, f: (JSON) -> T) -> Deferred<Result<StorageResponse<T>>> {
+        let deferred = Deferred<Result<StorageResponse<T>>>(defaultQueue: self.resultQueue)
 
-        let req = requestGET(self.serverURI.URLByAppendingPathComponent("meta/global"))
+        let req = requestGET(self.serverURI.URLByAppendingPathComponent(path))
         req.responseParsedJSON(errorWrap(deferred, { (_, response, data, error) in
             if let json: JSON = data as? JSON {
-                let storageResponse = StorageResponse(value: GlobalEnvelope(json), response: response!)
+                let storageResponse = StorageResponse<T>(value: f(json), response: response!)
                 deferred.fill(Result(success: storageResponse))
                 return
             }
@@ -243,6 +243,14 @@ public class Sync15StorageClient {
         }))
 
         return deferred
+    }
+
+    func getInfoCollections() -> Deferred<Result<StorageResponse<InfoCollections>>> {
+        return fetch("info/collections", { InfoCollections(json: $0) })
+    }
+
+    func getMetaGlobal() -> Deferred<Result<StorageResponse<GlobalEnvelope>>> {
+        return fetch("meta/global", { GlobalEnvelope($0) })
     }
 
     // TODO: it would be convenient to have the storage client manage Keys,
